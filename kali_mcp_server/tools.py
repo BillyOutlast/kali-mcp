@@ -241,6 +241,50 @@ def create_session(session_name, description, target):
     save_active_session(session_name)
     return metadata
 
+
+def get_active_session_output_path(filename: str) -> str:
+    """Return a session-scoped file path when an active session exists."""
+    acwtive_session = load_active_session()
+    if not active_session:
+        return filename
+
+    session_dir = get_session_path(active_session)
+    try:
+        os.makedirs(session_dir, exist_ok=True)
+        return os.path.join(session_dir, filename)
+    except Exception:
+        return filename
+
+
+def append_session_history(action: str, details: str = "") -> None:
+    """Append an action entry to the active session history if available."""
+    active_session = load_active_session()
+    if not active_session:
+        return
+
+    metadata_path = get_session_metadata_path(active_session)
+    try:
+        with open(metadata_path, "r") as f:
+            metadata = json.load(f)
+    except Exception:
+        return
+
+    history = metadata.get("history", [])
+    history.append(
+        {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "action": action,
+            "details": details,
+        }
+    )
+    metadata["history"] = history
+
+    try:
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, indent=2)
+    except Exception:
+        return
+
 # --- Session Management Tools ---
 
 async def session_create(session_name: str, description: str = "", target: str = "") -> list:
@@ -752,7 +796,9 @@ async def vulnerability_scan(target: str, scan_type: str = "comprehensive") -> S
         List containing TextContent with scan results
     """
     timestamp = asyncio.get_event_loop().time()
-    output_file = f"vuln_scan_{target.replace('.', '_')}_{int(timestamp)}.txt"
+    output_file = get_active_session_output_path(
+        f"vuln_scan_{target.replace('.', '_')}_{int(timestamp)}.txt"
+    )
     
     scan_commands = []
     
@@ -788,6 +834,11 @@ async def vulnerability_scan(target: str, scan_type: str = "comprehensive") -> S
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
+
+    append_session_history(
+        action=f"vulnerability_scan ({scan_type})",
+        details=f"target={target}, output={output_file}",
+    )
     
     return [types.TextContent(type="text", text=
         f"🚀 Starting {scan_type} vulnerability scan on {target}\n\n"
@@ -811,7 +862,9 @@ async def web_enumeration(target: str, enumeration_type: str = "full") -> Sequen
         List containing TextContent with enumeration results
     """
     timestamp = asyncio.get_event_loop().time()
-    output_file = f"web_enum_{target.replace('://', '_').replace('/', '_')}_{int(timestamp)}.txt"
+    output_file = get_active_session_output_path(
+        f"web_enum_{target.replace('://', '_').replace('/', '_')}_{int(timestamp)}.txt"
+    )
     
     # Ensure target has protocol
     if not target.startswith(('http://', 'https://')):
@@ -848,6 +901,11 @@ async def web_enumeration(target: str, enumeration_type: str = "full") -> Sequen
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
+
+    append_session_history(
+        action=f"web_enumeration ({enumeration_type})",
+        details=f"target={target}, output={output_file}",
+    )
     
     return [types.TextContent(type="text", text=
         f"🌐 Starting {enumeration_type} web enumeration on {target}\n\n"
@@ -871,7 +929,9 @@ async def network_discovery(target: str, discovery_type: str = "comprehensive") 
         List containing TextContent with discovery results
     """
     timestamp = asyncio.get_event_loop().time()
-    output_file = f"network_discovery_{target.replace('/', '_')}_{int(timestamp)}.txt"
+    output_file = get_active_session_output_path(
+        f"network_discovery_{target.replace('/', '_')}_{int(timestamp)}.txt"
+    )
     
     discovery_commands = []
     
@@ -903,6 +963,11 @@ async def network_discovery(target: str, discovery_type: str = "comprehensive") 
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
+
+    append_session_history(
+        action=f"network_discovery ({discovery_type})",
+        details=f"target={target}, output={output_file}",
+    )
     
     return [types.TextContent(type="text", text=
         f"🔍 Starting {discovery_type} network discovery on {target}\n\n"
@@ -2654,12 +2719,19 @@ async def recon_auto(
     # Save summary
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_target = re.sub(r'[^a-zA-Z0-9._-]', '_', target)
-    output_file = f"recon_{safe_target}_{depth}_{timestamp}.txt"
+    output_file = get_active_session_output_path(
+        f"recon_{safe_target}_{depth}_{timestamp}.txt"
+    )
     try:
         with open(output_file, "w") as f:
             f.write(output)
     except Exception:
         pass
+
+    append_session_history(
+        action=f"recon_auto ({depth})",
+        details=f"target={target}, output={output_file}",
+    )
 
     output += f"\nFull report saved to: {output_file}"
     return [types.TextContent(type="text", text=output)]
