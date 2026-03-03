@@ -95,6 +95,7 @@ ALLOWED_COMMANDS = [
     ("impacket-", True),
     ("evil-winrm", True),
     ("wfuzz", True),
+    ("nuclei", True),
     ("ffuf", True),
     ("feroxbuster", True),
     ("whatweb", False),
@@ -1909,6 +1910,173 @@ async def web_audit(url: str, audit_type: str = "comprehensive") -> Sequence[typ
     except Exception as e:
         return [types.TextContent(type="text", text=f"❌ Error during web audit: {str(e)}")]
 
+
+async def nuclei_scan(
+    target: str,
+    severity: str = "medium,high,critical",
+    tags: Optional[str] = None,
+) -> Sequence[types.TextContent]:
+    """
+    Run a Nuclei template-based vulnerability scan.
+
+    Args:
+        target: URL/host target to scan
+        severity: Comma-separated severities to include
+        tags: Optional comma-separated template tags
+
+    Returns:
+        List containing TextContent with scan status/results preview
+    """
+    import datetime
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_target = re.sub(r"[^a-zA-Z0-9._-]", "_", target)
+    output_file = get_active_session_output_path(f"nuclei_{safe_target}_{timestamp}.txt")
+
+    command_parts = [
+        "nuclei",
+        "-u",
+        shlex.quote(target),
+        "-severity",
+        shlex.quote(severity),
+        "-o",
+        shlex.quote(output_file),
+    ]
+    if tags:
+        command_parts.extend(["-tags", shlex.quote(tags)])
+
+    nuclei_cmd = " ".join(command_parts)
+
+    try:
+        process = await asyncio.create_subprocess_shell(
+            nuclei_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=600.0)
+
+        append_session_history(
+            action="nuclei_scan",
+            details=f"target={target}, severity={severity}, output={output_file}",
+        )
+
+        output_preview = ""
+        if os.path.exists(output_file):
+            with open(output_file, "r", errors="ignore") as f:
+                output_preview = f.read()
+
+        if not output_preview:
+            stderr_text = stderr.decode().strip() if stderr else ""
+            output_preview = stderr_text or "No findings or no output generated."
+
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"🧪 Nuclei scan completed!\n\n"
+                    f"🎯 Target: {target}\n"
+                    f"🚦 Severity: {severity}\n"
+                    f"🏷️ Tags: {tags or 'default'}\n"
+                    f"📁 Results saved to: {output_file}\n"
+                    f"🕒 Completed: {datetime.datetime.now().isoformat()}\n\n"
+                    f"📝 Results Preview:\n{output_preview[:800]}{'...' if len(output_preview) > 800 else ''}"
+                ),
+            )
+        ]
+    except asyncio.TimeoutError:
+        return [types.TextContent(type="text", text="❌ Nuclei scan timed out after 10 minutes")]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"❌ Error during nuclei scan: {str(e)}")]
+
+
+async def web_fuzz(
+    url: str,
+    mode: str = "dir",
+    wordlist: str = "/usr/share/wordlists/dirb/common.txt",
+    threads: int = 40,
+    extensions: str = "",
+) -> Sequence[types.TextContent]:
+    """
+    Run FFUF-based web fuzzing for directories or vhosts.
+
+    Args:
+        url: Base target URL
+        mode: Fuzz mode (dir or vhost)
+        wordlist: Path to fuzzing wordlist
+        threads: Number of concurrent threads
+        extensions: Optional comma-separated extensions for dir mode
+
+    Returns:
+        List containing TextContent with scan status/results preview
+    """
+    import datetime
+
+    if not url.startswith(("http://", "https://")):
+        url = f"http://{url}"
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_url = re.sub(r"[^a-zA-Z0-9._-]", "_", url)
+    output_file = get_active_session_output_path(f"ffuf_{mode}_{safe_url}_{timestamp}.json")
+
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.netloc
+
+    try:
+        if mode == "vhost":
+            ffuf_cmd = (
+                f"ffuf -w {shlex.quote(wordlist)} -u {shlex.quote(url)} "
+                f"-H {shlex.quote(f'Host: FUZZ.{host}')} -t {threads} "
+                f"-mc 200,204,301,302,307,401,403 -of json -o {shlex.quote(output_file)}"
+            )
+        else:
+            ext_arg = f" -e {shlex.quote(extensions)}" if extensions else ""
+            ffuf_cmd = (
+                f"ffuf -w {shlex.quote(wordlist)} -u {shlex.quote(url.rstrip('/') + '/FUZZ')} "
+                f"-t {threads} -mc 200,204,301,302,307,401,403{ext_arg} "
+                f"-of json -o {shlex.quote(output_file)}"
+            )
+
+        process = await asyncio.create_subprocess_shell(
+            ffuf_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=600.0)
+
+        append_session_history(
+            action=f"web_fuzz ({mode})",
+            details=f"target={url}, wordlist={wordlist}, output={output_file}",
+        )
+
+        output_preview = ""
+        if os.path.exists(output_file):
+            with open(output_file, "r", errors="ignore") as f:
+                output_preview = f.read()
+
+        if not output_preview:
+            stderr_text = stderr.decode().strip() if stderr else ""
+            output_preview = stderr_text or "No findings or no output generated."
+
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"🧰 FFUF fuzzing completed!\n\n"
+                    f"🎯 Target: {url}\n"
+                    f"🧭 Mode: {mode}\n"
+                    f"📚 Wordlist: {wordlist}\n"
+                    f"🧵 Threads: {threads}\n"
+                    f"📁 Results saved to: {output_file}\n"
+                    f"🕒 Completed: {datetime.datetime.now().isoformat()}\n\n"
+                    f"📝 Results Preview:\n{output_preview[:800]}{'...' if len(output_preview) > 800 else ''}"
+                ),
+            )
+        ]
+    except asyncio.TimeoutError:
+        return [types.TextContent(type="text", text="❌ FFUF fuzzing timed out after 10 minutes")]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"❌ Error during web fuzzing: {str(e)}")]
+
 # --- Phase 1: Pure Python Tools ---
 
 
@@ -2867,6 +3035,8 @@ OUTPUT_FILE_PATTERNS = [
     "web_enum_*.txt", 
     "network_discovery_*.txt",
     "exploit_search_*.txt",
+    "nuclei_*.txt",
+    "ffuf_*.json",
     
     # File management outputs
     "*_output_*.txt",

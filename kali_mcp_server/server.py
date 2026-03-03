@@ -37,6 +37,8 @@ from kali_mcp_server.tools import (
     ssl_analysis,
     subdomain_enum,
     web_audit,
+    nuclei_scan,
+    web_fuzz,
     encode_decode,
     reverse_shell,
     hash_identify,
@@ -202,6 +204,22 @@ async def handle_tool_request(
             raise ValueError("Missing required argument 'url'")
         audit_type = arguments.get("audit_type", "comprehensive")
         return await web_audit(arguments["url"], audit_type)
+
+    elif name == "nuclei_scan":
+        if "target" not in arguments:
+            raise ValueError("Missing required argument 'target'")
+        severity = arguments.get("severity", "medium,high,critical")
+        tags = arguments.get("tags")
+        return await nuclei_scan(arguments["target"], severity, tags)
+
+    elif name == "web_fuzz":
+        if "url" not in arguments:
+            raise ValueError("Missing required argument 'url'")
+        mode = arguments.get("mode", "dir")
+        wordlist = arguments.get("wordlist", "/usr/share/wordlists/dirb/common.txt")
+        threads = arguments.get("threads", 40)
+        extensions = arguments.get("extensions", "")
+        return await web_fuzz(arguments["url"], mode, wordlist, threads, extensions)
 
     elif name == "encode_decode":
         if "data" not in arguments:
@@ -723,6 +741,64 @@ async def list_available_tools() -> List[types.Tool]:
                         "enum": ["comprehensive", "quick"],
                         "default": "comprehensive"
                     }
+                },
+            },
+        ),
+        types.Tool(
+            name="nuclei_scan",
+            description="Run Nuclei template-based vulnerability scan",
+            inputSchema={
+                "type": "object",
+                "required": ["target"],
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Target URL/host for Nuclei scan",
+                    },
+                    "severity": {
+                        "type": "string",
+                        "description": "Comma-separated severity levels",
+                        "default": "medium,high,critical",
+                    },
+                    "tags": {
+                        "type": "string",
+                        "description": "Optional comma-separated Nuclei tags",
+                    },
+                },
+            },
+        ),
+        types.Tool(
+            name="web_fuzz",
+            description="Run FFUF web fuzzing for directories or virtual hosts",
+            inputSchema={
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Base target URL",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "Fuzz mode",
+                        "enum": ["dir", "vhost"],
+                        "default": "dir",
+                    },
+                    "wordlist": {
+                        "type": "string",
+                        "description": "Path to wordlist file",
+                        "default": "/usr/share/wordlists/dirb/common.txt",
+                    },
+                    "threads": {
+                        "type": "integer",
+                        "description": "Concurrency level",
+                        "default": 40,
+                    },
+                    "extensions": {
+                        "type": "string",
+                        "description": "Comma-separated extensions (dir mode)",
+                        "default": "",
+                    },
                 },
             },
         ),

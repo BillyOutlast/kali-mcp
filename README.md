@@ -63,7 +63,7 @@ docker run -p 8000:8000 kali-mcp-server
 2. Restart Claude Desktop
 3. Test with: `/run nmap -F localhost`
 
-## Available MCP Tools (35)
+## Available MCP Tools (38)
 
 ### Core Tools
 
@@ -90,6 +90,8 @@ docker run -p 8000:8000 kali-mcp-server
 | `vulnerability_scan` | Automated vulnerability assessment with multiple tools |
 | `web_enumeration` | Web application discovery and enumeration |
 | `web_audit` | Comprehensive web application security audit |
+| `nuclei_scan` | Template-based vulnerability scanning with Nuclei |
+| `web_fuzz` | Web content and vhost fuzzing with FFUF |
 | `spider_website` | Web crawling and spidering using gospider |
 | `form_analysis` | Discover and analyze web forms |
 | `header_analysis` | HTTP header security analysis |
@@ -149,6 +151,7 @@ docker run -p 8000:8000 kali-mcp-server
 | `session_status` | Show current session status |
 | `session_delete` | Delete a session and its evidence |
 | `session_history` | Show command history for current session |
+| `session_results` | Read recent output previews for the active session |
 
 ---
 
@@ -304,6 +307,22 @@ Auto-detects and parses output from nikto, gobuster, dirb, hydra, or sqlmap.
 ```
 
 **Types:** basic, full, aggressive
+
+### `nuclei_scan`
+
+```
+/nuclei_scan target=https://example.com severity=high,critical
+/nuclei_scan target=https://example.com severity=medium,high tags=cve,rce
+```
+
+### `web_fuzz`
+
+```
+/web_fuzz url=https://example.com mode=dir wordlist=/usr/share/wordlists/dirb/common.txt threads=40
+/web_fuzz url=https://example.com mode=vhost wordlist=/usr/share/wordlists/SecLists/Discovery/DNS/subdomains-top1million-5000.txt threads=50
+```
+
+**Modes:** dir, vhost
 
 ### `network_discovery`
 

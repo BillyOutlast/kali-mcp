@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y \
     whois \
     hydra \
     gobuster \
+    ffuf \
+    nuclei \
     dirb \
     nikto \
     sqlmap \

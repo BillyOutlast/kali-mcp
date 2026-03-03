@@ -311,3 +311,53 @@ async def test_handle_session_results():
     with patch("kali_mcp_server.server.session_results", mock_fn):
         result = await handle_tool_request("session_results", {"limit": 2, "lines": 40})
         assert "results 2/40" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_handle_nuclei_scan():
+    """Test dispatch for nuclei_scan tool."""
+
+    async def mock_fn(target, severity, tags):
+        return [types.TextContent(type="text", text=f"nuclei {target} {severity} {tags}")]
+
+    with patch("kali_mcp_server.server.nuclei_scan", mock_fn):
+        result = await handle_tool_request(
+            "nuclei_scan",
+            {"target": "https://example.com", "severity": "high,critical", "tags": "cve"},
+        )
+        assert "nuclei https://example.com high,critical cve" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_handle_nuclei_scan_missing_arg():
+    """Test nuclei_scan dispatch with missing target."""
+    with pytest.raises(ValueError, match="Missing required argument 'target'"):
+        await handle_tool_request("nuclei_scan", {})
+
+
+@pytest.mark.asyncio
+async def test_handle_web_fuzz():
+    """Test dispatch for web_fuzz tool."""
+
+    async def mock_fn(url, mode, wordlist, threads, extensions):
+        return [types.TextContent(type="text", text=f"ffuf {url} {mode} {threads} {extensions}")]
+
+    with patch("kali_mcp_server.server.web_fuzz", mock_fn):
+        result = await handle_tool_request(
+            "web_fuzz",
+            {
+                "url": "https://example.com",
+                "mode": "dir",
+                "wordlist": "/usr/share/wordlists/dirb/common.txt",
+                "threads": 50,
+                "extensions": "php,txt",
+            },
+        )
+        assert "ffuf https://example.com dir 50 php,txt" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_handle_web_fuzz_missing_arg():
+    """Test web_fuzz dispatch with missing url."""
+    with pytest.raises(ValueError, match="Missing required argument 'url'"):
+        await handle_tool_request("web_fuzz", {})
