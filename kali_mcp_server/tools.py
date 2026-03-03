@@ -244,9 +244,28 @@ def create_session(session_name, description, target):
     return metadata
 
 
-def get_active_session_output_path(filename: str) -> str:
-    """Return a session-scoped file path when an active session exists."""
+def ensure_active_session() -> str:
+    """Ensure an active session exists and return its name."""
     active_session = load_active_session()
+    if active_session:
+        return active_session
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    auto_session_name = f"auto_session_{timestamp}"
+    try:
+        create_session(
+            session_name=auto_session_name,
+            description="Automatically created session",
+            target="unknown",
+        )
+        return auto_session_name
+    except Exception:
+        return ""
+
+
+def get_active_session_output_path(filename: str) -> str:
+    """Return a session-scoped file path; auto-create a session if needed."""
+    active_session = ensure_active_session()
     if not active_session:
         return filename
 
@@ -761,14 +780,19 @@ async def run_command(command: str) -> Sequence[types.TextContent]:
         
         # For long-running commands, run them in the background
         if is_long_running:
-            process = await asyncio.create_subprocess_shell(
-                f"{command} > command_output.txt 2>&1 &",
+            output_file = get_active_session_output_path("command_output.txt")
+            await asyncio.create_subprocess_shell(
+                f"{command} > {output_file} 2>&1 &",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
+            append_session_history(
+                action="run_command (background)",
+                details=f"command={command}, output={output_file}",
+            )
             return [types.TextContent(type="text", text=
-                f"Running command '{command}' in background. Output will be saved to command_output.txt.\n"
-                f"You can view results later with 'cat command_output.txt'"
+                f"Running command '{command}' in background. Output will be saved to {output_file}.\n"
+                f"You can view results later with 'cat {output_file}'"
             )]
         
         # For regular commands, use a timeout approach
@@ -1261,7 +1285,9 @@ async def create_report(title: str, findings: str, report_type: str = "markdown"
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_title = "".join(c for c in title if c.isalnum() or c in ('-', '_', ' ')).rstrip()
-    report_file = f"report_{safe_title.replace(' ', '_')}_{timestamp}.{report_type}"
+    report_file = get_active_session_output_path(
+        f"report_{safe_title.replace(' ', '_')}_{timestamp}.{report_type}"
+    )
     
     try:
         if report_type == "markdown":
@@ -1330,6 +1356,11 @@ Generated on {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         # Save report to file
         with open(report_file, 'w') as f:
             f.write(report_content)
+
+        append_session_history(
+            action=f"create_report ({report_type})",
+            details=f"output={report_file}",
+        )
         
         return [types.TextContent(type="text", text=
             f"📋 Report generated successfully!\n\n"
@@ -1356,7 +1387,9 @@ async def file_analysis(filepath: str) -> Sequence[types.TextContent]:
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_filename = "".join(c for c in filepath.split('/')[-1] if c.isalnum() or c in ('-', '_', '.')).rstrip()
-    analysis_file = f"file_analysis_{safe_filename}_{timestamp}.txt"
+    analysis_file = get_active_session_output_path(
+        f"file_analysis_{safe_filename}_{timestamp}.txt"
+    )
     
     analysis_commands = [
         f"file {filepath}",
@@ -1410,6 +1443,10 @@ async def file_analysis(filepath: str) -> Sequence[types.TextContent]:
     try:
         with open(analysis_file, 'w') as f:
             f.write(full_analysis)
+        append_session_history(
+            action="file_analysis",
+            details=f"target={filepath}, output={analysis_file}",
+        )
     except Exception as e:
         return [types.TextContent(type="text", text=f"❌ Error saving analysis: {str(e)}")]
     
@@ -1449,10 +1486,10 @@ async def download_file(url: str, filename: Optional[str] = None) -> Sequence[ty
     if not safe_filename:
         safe_filename = f"downloaded_{timestamp}"
     
-    download_path = f"downloads/{safe_filename}"
+    download_path = get_active_session_output_path(f"downloads/{safe_filename}")
     
     # Create downloads directory if it doesn't exist
-    os.makedirs("downloads", exist_ok=True)
+    os.makedirs(os.path.dirname(download_path), exist_ok=True)
     
     try:
         # Download file
@@ -1471,6 +1508,11 @@ async def download_file(url: str, filename: Optional[str] = None) -> Sequence[ty
             # Save file
             with open(download_path, 'wb') as f:
                 f.write(response.content)
+
+            append_session_history(
+                action="download_file",
+                details=f"target={url}, output={download_path}",
+            )
             
             # Get file info
             file_size = len(response.content)
@@ -1518,7 +1560,7 @@ async def spider_website(url: str, depth: int = 2, threads: int = 10) -> Sequenc
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_url = url.replace('://', '_').replace('/', '_').replace('.', '_')
-    output_file = f"spider_{safe_url}_{timestamp}.txt"
+    output_file = get_active_session_output_path(f"spider_{safe_url}_{timestamp}.txt")
     
     # Ensure URL has protocol
     if not url.startswith(('http://', 'https://')):
@@ -1542,6 +1584,11 @@ async def spider_website(url: str, depth: int = 2, threads: int = 10) -> Sequenc
                 results = f.read()
         except (FileNotFoundError, IsADirectoryError):
             results = "Spidering completed - results may be in separate files"
+
+        append_session_history(
+            action="spider_website",
+            details=f"target={url}, output={output_file}",
+        )
         
         return [types.TextContent(type="text", text=
             f"🕷️ Website spidering completed!\n\n"
@@ -1573,7 +1620,7 @@ async def form_analysis(url: str, scan_type: str = "comprehensive") -> Sequence[
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_url = url.replace('://', '_').replace('/', '_').replace('.', '_')
-    output_file = f"form_analysis_{safe_url}_{timestamp}.txt"
+    output_file = get_active_session_output_path(f"form_analysis_{safe_url}_{timestamp}.txt")
     
     # Ensure URL has protocol
     if not url.startswith(('http://', 'https://')):
@@ -1612,6 +1659,11 @@ async def form_analysis(url: str, scan_type: str = "comprehensive") -> Sequence[
             results = "No results file generated"
         
         content_type = curl_stdout.decode().strip() if curl_stdout else "Unknown"
+
+        append_session_history(
+            action=f"form_analysis ({scan_type})",
+            details=f"target={url}, output={output_file}",
+        )
         
         return [types.TextContent(type="text", text=
             f"📝 Form analysis completed!\n\n"
@@ -1643,7 +1695,7 @@ async def header_analysis(url: str, include_security: bool = True) -> Sequence[t
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_url = url.replace('://', '_').replace('/', '_').replace('.', '_')
-    output_file = f"header_analysis_{safe_url}_{timestamp}.txt"
+    output_file = get_active_session_output_path(f"header_analysis_{safe_url}_{timestamp}.txt")
     
     # Ensure URL has protocol
     if not url.startswith(('http://', 'https://')):
@@ -1696,6 +1748,11 @@ async def header_analysis(url: str, include_security: bool = True) -> Sequence[t
         
         with open(output_file, 'w') as f:
             f.write(full_analysis)
+
+        append_session_history(
+            action="header_analysis",
+            details=f"target={url}, output={output_file}",
+        )
         
         return [types.TextContent(type="text", text=
             f"📋 Header analysis completed!\n\n"
@@ -1726,7 +1783,7 @@ async def ssl_analysis(url: str, port: int = 443) -> Sequence[types.TextContent]
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_url = url.replace('://', '_').replace('/', '_').replace('.', '_')
-    output_file = f"ssl_analysis_{safe_url}_{timestamp}.txt"
+    output_file = get_active_session_output_path(f"ssl_analysis_{safe_url}_{timestamp}.txt")
     
     # Extract domain from URL
     domain = url.replace('http://', '').replace('https://', '').split('/')[0]
@@ -1759,6 +1816,11 @@ async def ssl_analysis(url: str, port: int = 443) -> Sequence[types.TextContent]
             key_findings.append("⚠️ Weak cipher suites detected")
         
         findings_summary = "\n".join(key_findings) if key_findings else "✅ No major issues detected"
+
+        append_session_history(
+            action="ssl_analysis",
+            details=f"target={domain}:{port}, output={output_file}",
+        )
         
         return [types.TextContent(type="text", text=
             f"🔐 SSL analysis completed!\n\n"
@@ -1789,7 +1851,7 @@ async def subdomain_enum(url: str, enum_type: str = "comprehensive") -> Sequence
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_url = url.replace('://', '_').replace('/', '_').replace('.', '_')
-    output_file = f"subdomain_enum_{safe_url}_{timestamp}.txt"
+    output_file = get_active_session_output_path(f"subdomain_enum_{safe_url}_{timestamp}.txt")
     
     # Extract domain from URL
     domain = url.replace('http://', '').replace('https://', '').split('/')[0]
@@ -1837,6 +1899,11 @@ async def subdomain_enum(url: str, enum_type: str = "comprehensive") -> Sequence
         
         # Count unique subdomains
         subdomain_count = len(set([line.strip() for line in combined_results.split('\n') if domain in line and line.strip()]))
+
+        append_session_history(
+            action=f"subdomain_enum ({enum_type})",
+            details=f"target={domain}, output={output_file}",
+        )
         
         return [types.TextContent(type="text", text=
             f"🔍 Subdomain enumeration completed!\n\n"
@@ -1866,7 +1933,7 @@ async def web_audit(url: str, audit_type: str = "comprehensive") -> Sequence[typ
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_url = url.replace('://', '_').replace('/', '_').replace('.', '_')
-    output_file = f"web_audit_{safe_url}_{timestamp}.txt"
+    output_file = get_active_session_output_path(f"web_audit_{safe_url}_{timestamp}.txt")
     
     # Ensure URL has protocol
     if not url.startswith(('http://', 'https://')):
@@ -1939,6 +2006,11 @@ async def web_audit(url: str, audit_type: str = "comprehensive") -> Sequence[typ
         
         with open(output_file, 'w') as f:
             f.write(summary)
+
+        append_session_history(
+            action=f"web_audit ({audit_type})",
+            details=f"target={url}, output={output_file}",
+        )
         
         return [types.TextContent(type="text", text=
             f"🔍 Web audit completed!\n\n"
@@ -2419,7 +2491,9 @@ async def hydra_attack(
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_target = re.sub(r'[^a-zA-Z0-9._-]', '_', target)
-    output_file = f"hydra_{safe_target}_{service}_{timestamp}.txt"
+    output_file = get_active_session_output_path(
+        f"hydra_{safe_target}_{service}_{timestamp}.txt"
+    )
 
     cmd_parts = ["hydra"]
     if username:
@@ -2443,6 +2517,11 @@ async def hydra_attack(
         f"{command} > {output_file} 2>&1 &",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+    )
+
+    append_session_history(
+        action=f"hydra_attack ({service})",
+        details=f"target={target}, output={output_file}",
     )
 
     return [types.TextContent(type="text", text=
@@ -2502,7 +2581,9 @@ async def payload_generate(
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     ext_map = {"elf": "elf", "exe": "exe", "raw": "bin", "python": "py", "php": "php", "war": "war"}
     ext = ext_map.get(format, "bin")
-    output_file = f"payload_{payload_type}_{platform}_{timestamp}.{ext}"
+    output_file = get_active_session_output_path(
+        f"payload_{payload_type}_{platform}_{timestamp}.{ext}"
+    )
 
     cmd_parts = [
         "msfvenom",
@@ -2524,6 +2605,11 @@ async def payload_generate(
     )
     stdout, _ = await asyncio.wait_for(process.communicate(), timeout=120.0)
     cmd_output = stdout.decode() if stdout else ""
+
+    append_session_history(
+        action=f"payload_generate ({payload_type}/{platform})",
+        details=f"output={output_file}",
+    )
 
     return [types.TextContent(type="text", text=
         f"msfvenom payload generation complete.\n\n"
