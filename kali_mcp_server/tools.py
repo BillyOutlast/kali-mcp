@@ -17,6 +17,7 @@ import os
 import platform
 import re
 import shlex
+import shutil
 import urllib.parse
 import xml.etree.ElementTree as ET
 from typing import Sequence, Union, Optional
@@ -1108,8 +1109,16 @@ async def exploit_search(search_term: str, search_type: str = "all") -> Sequence
     Returns:
         List containing TextContent with search results
     """
+    if shutil.which("searchsploit") is None:
+        return [types.TextContent(type="text", text=
+            "❌ searchsploit is not installed in this container. "
+            "Install the 'exploitdb' package and rebuild the image (docker compose up -d --build)."
+        )]
+
     timestamp = asyncio.get_event_loop().time()
-    output_file = f"exploit_search_{search_term.replace(' ', '_')}_{int(timestamp)}.txt"
+    output_file = get_active_session_output_path(
+        f"exploit_search_{search_term.replace(' ', '_')}_{int(timestamp)}.txt"
+    )
     
     search_commands = []
     
@@ -1146,7 +1155,12 @@ async def exploit_search(search_term: str, search_type: str = "all") -> Sequence
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await process.communicate()
+        await process.communicate()
+
+    append_session_history(
+        action=f"exploit_search ({search_type})",
+        details=f"target={search_term}, output={output_file}",
+    )
     
     # Read results
     try:
