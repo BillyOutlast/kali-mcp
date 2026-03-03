@@ -567,10 +567,10 @@ async def session_history() -> list:
 
 async def session_results(limit: int = 3, lines: int = 80) -> list:
     """
-    Show recent output previews from files associated with the active session.
+    Show output previews from files associated with the active session.
 
     Args:
-        limit: Maximum number of recent output files to show
+        limit: Maximum number of files to show. Use 0 or negative for all files.
         lines: Number of trailing lines to include per file
 
     Returns:
@@ -609,8 +609,25 @@ async def session_results(limit: int = 3, lines: int = 80) -> list:
             if output_path in output_files:
                 continue
             output_files.append(output_path)
-            if len(output_files) >= max(1, limit):
-                break
+
+        # Also include files physically present in the active session directory,
+        # even if they were not tracked in history metadata.
+        session_dir = get_session_path(active_session)
+        if os.path.isdir(session_dir):
+            for entry in os.listdir(session_dir):
+                if entry in ("metadata.json", "credentials.json"):
+                    continue
+                full_path = os.path.join(session_dir, entry)
+                if os.path.isfile(full_path) and full_path not in output_files:
+                    output_files.append(full_path)
+
+        output_files.sort(
+            key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0,
+            reverse=True,
+        )
+
+        if limit > 0:
+            output_files = output_files[:limit]
 
         if not output_files:
             return [
@@ -623,8 +640,11 @@ async def session_results(limit: int = 3, lines: int = 80) -> list:
                 )
             ]
 
-        output = f"📄 **Recent Results for '{active_session}'**\n\n"
-        output += f"Showing up to {max(1, limit)} file(s), {max(1, lines)} trailing line(s) each.\n\n"
+        output = f"📄 **Session Results for '{active_session}'**\n\n"
+        if limit > 0:
+            output += f"Showing up to {limit} file(s), {max(1, lines)} trailing line(s) each.\n\n"
+        else:
+            output += f"Showing all available files, {max(1, lines)} trailing line(s) each.\n\n"
 
         for path in output_files:
             output += f"## {path}\n"
@@ -1195,9 +1215,11 @@ async def save_output(content: str, filename: Optional[str] = None, category: st
     if filename:
         # Sanitize filename
         safe_filename = "".join(c for c in filename if c.isalnum() or c in ('-', '_')).rstrip()
-        output_file = f"{category}_{safe_filename}_{timestamp}.txt"
+        output_file = get_active_session_output_path(
+            f"{category}_{safe_filename}_{timestamp}.txt"
+        )
     else:
-        output_file = f"{category}_output_{timestamp}.txt"
+        output_file = get_active_session_output_path(f"{category}_output_{timestamp}.txt")
     
     try:
         with open(output_file, 'w') as f:
@@ -1206,6 +1228,11 @@ async def save_output(content: str, filename: Optional[str] = None, category: st
             f.write(f"File: {output_file}\n")
             f.write("-" * 50 + "\n\n")
             f.write(content)
+
+        append_session_history(
+            action=f"save_output ({category})",
+            details=f"output={output_file}",
+        )
         
         return [types.TextContent(type="text", text=
             f"✅ Content saved successfully!\n\n"
@@ -2543,8 +2570,12 @@ async def port_scan(
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_target = re.sub(r'[^a-zA-Z0-9._-]', '_', target)
-    output_txt = f"port_scan_{safe_target}_{scan_type}_{timestamp}.txt"
-    output_xml = f"port_scan_{safe_target}_{scan_type}_{timestamp}.xml"
+    output_txt = get_active_session_output_path(
+        f"port_scan_{safe_target}_{scan_type}_{timestamp}.txt"
+    )
+    output_xml = get_active_session_output_path(
+        f"port_scan_{safe_target}_{scan_type}_{timestamp}.xml"
+    )
 
     flags = SCAN_PRESETS[scan_type]
     if ports:
@@ -2557,6 +2588,11 @@ async def port_scan(
         f"{command} > /dev/null 2>&1 &",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+    )
+
+    append_session_history(
+        action=f"port_scan ({scan_type})",
+        details=f"target={target}, output={output_txt}",
     )
 
     return [types.TextContent(type="text", text=
@@ -2586,7 +2622,7 @@ async def dns_enum(
     """
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_domain = re.sub(r'[^a-zA-Z0-9._-]', '_', domain)
-    output_file = f"dns_enum_{safe_domain}_{timestamp}.txt"
+    output_file = get_active_session_output_path(f"dns_enum_{safe_domain}_{timestamp}.txt")
 
     if record_types == "all":
         types_list = ["A", "AAAA", "MX", "NS", "TXT", "CNAME", "SOA", "SRV"]
@@ -2648,6 +2684,11 @@ async def dns_enum(
     except Exception:
         pass
 
+    append_session_history(
+        action="dns_enum",
+        details=f"target={domain}, output={output_file}",
+    )
+
     return [types.TextContent(type="text", text=
         f"dns_enum completed for {domain}.\n\n"
         f"Records queried: {', '.join(types_list)}\n"
@@ -2676,7 +2717,7 @@ async def enum_shares(
     """
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_target = re.sub(r'[^a-zA-Z0-9._-]', '_', target)
-    output_file = f"enum_shares_{safe_target}_{timestamp}.txt"
+    output_file = get_active_session_output_path(f"enum_shares_{safe_target}_{timestamp}.txt")
 
     results = []
 
@@ -2734,6 +2775,11 @@ async def enum_shares(
             f.write(full_output)
     except Exception:
         pass
+
+    append_session_history(
+        action=f"enum_shares ({enum_type})",
+        details=f"target={target}, output={output_file}",
+    )
 
     return [types.TextContent(type="text", text=
         f"enum_shares completed for {target}.\n\n"
