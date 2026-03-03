@@ -6,10 +6,25 @@ set -e  # Exit on error
 TARGET=${1:-all}
 
 setup_venv() {
-	if [ ! -d ".venv" ]; then
-		echo "===== Creating virtual environment ====="
-		python3 -m venv .venv
+	if [ -n "$VIRTUAL_ENV" ]; then
+		echo "===== Using active virtual environment: $VIRTUAL_ENV ====="
+		return
 	fi
+
+	if [ -d "venv" ]; then
+		echo "===== Using existing virtual environment: venv ====="
+		source venv/bin/activate
+		return
+	fi
+
+	if [ -d ".venv" ]; then
+		echo "===== Using existing virtual environment: .venv ====="
+		source .venv/bin/activate
+		return
+	fi
+
+	echo "===== Creating virtual environment ====="
+	python3 -m venv .venv
 	source .venv/bin/activate
 }
 
@@ -18,33 +33,47 @@ install_dev() {
 	pip install -e ".[dev]"
 }
 
+ensure_tool() {
+	TOOL_NAME="$1"
+	if ! command -v "$TOOL_NAME" >/dev/null 2>&1; then
+		echo "===== Missing $TOOL_NAME, installing dev dependencies ====="
+		install_dev
+	fi
+}
+
 run_typecheck() {
 	echo "===== Running type checking ====="
+	ensure_tool pyright
 	pyright
 }
 
 run_lint() {
 	echo "===== Running linting ====="
+	ensure_tool ruff
 	ruff check .
 }
 
 run_format() {
 	echo "===== Running formatting ====="
+	ensure_tool ruff
 	ruff format .
 }
 
 run_tests() {
 	echo "===== Running tests ====="
+	ensure_tool pytest
 	pytest
 }
 
 run_tests_tools() {
 	echo "===== Running tests/test_tools.py ====="
+	ensure_tool pytest
 	pytest tests/test_tools.py
 }
 
 run_tests_session() {
 	echo "===== Running tests matching session ====="
+	ensure_tool pytest
 	pytest -k "session"
 }
 
