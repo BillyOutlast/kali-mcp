@@ -51,6 +51,7 @@ from kali_mcp_server.tools import (
     parse_nmap,
     parse_tool_output,
     recon_auto,
+    run_pentest,
 )
 
 # Create server instance with descriptive name
@@ -320,6 +321,13 @@ async def handle_tool_request(
             raise ValueError("Missing required argument 'target'")
         depth = arguments.get("depth", "quick")
         return await recon_auto(arguments["target"], depth)
+
+    elif name == "run_pentest":
+        if "target" not in arguments:
+            raise ValueError("Missing required argument 'target'")
+        session_name = arguments.get("session_name")
+        depth = arguments.get("depth", "deep")
+        return await run_pentest(arguments["target"], session_name, depth)
 
     else:
         raise ValueError(f"Unknown tool: {name}")
@@ -1108,6 +1116,30 @@ async def list_available_tools() -> List[types.Tool]:
                         "enum": ["quick", "standard", "deep"],
                         "default": "quick"
                     }
+                },
+            },
+        ),
+        types.Tool(
+            name="run_pentest",
+            description="Create/switch session, run pentest workflow, and return markdown report in chat",
+            inputSchema={
+                "type": "object",
+                "required": ["target"],
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Target host or network",
+                    },
+                    "session_name": {
+                        "type": "string",
+                        "description": "Optional session name",
+                    },
+                    "depth": {
+                        "type": "string",
+                        "description": "Recon depth",
+                        "enum": ["quick", "standard", "deep"],
+                        "default": "deep",
+                    },
                 },
             },
         ),

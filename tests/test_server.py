@@ -361,3 +361,25 @@ async def test_handle_web_fuzz_missing_arg():
     """Test web_fuzz dispatch with missing url."""
     with pytest.raises(ValueError, match="Missing required argument 'url'"):
         await handle_tool_request("web_fuzz", {})
+
+
+@pytest.mark.asyncio
+async def test_handle_run_pentest():
+    """Test dispatch for run_pentest tool."""
+
+    async def mock_fn(target, session_name, depth):
+        return [types.TextContent(type="text", text=f"pentest {target} {session_name} {depth}")]
+
+    with patch("kali_mcp_server.server.run_pentest", mock_fn):
+        result = await handle_tool_request(
+            "run_pentest",
+            {"target": "192.168.31.1", "session_name": "Pentest-192.168.31.1", "depth": "deep"},
+        )
+        assert "pentest 192.168.31.1 Pentest-192.168.31.1 deep" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_handle_run_pentest_missing_arg():
+    """Test run_pentest dispatch with missing target."""
+    with pytest.raises(ValueError, match="Missing required argument 'target'"):
+        await handle_tool_request("run_pentest", {})

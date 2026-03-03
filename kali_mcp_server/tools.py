@@ -3168,6 +3168,116 @@ async def recon_auto(
     return [types.TextContent(type="text", text=output)]
 
 
+async def run_pentest(
+    target: str,
+    session_name: Optional[str] = None,
+    depth: str = "deep",
+) -> Sequence[types.TextContent]:
+    """
+    High-level workflow to create/switch session, run pentest phases, and return markdown report.
+
+    Args:
+        target: Target host or network
+        session_name: Optional session name. Auto-generated when omitted.
+        depth: Recon depth (quick, standard, deep)
+
+    Returns:
+        List containing TextContent with markdown report summary
+    """
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_target = re.sub(r"[^a-zA-Z0-9._-]", "_", target)
+    chosen_session = session_name or f"pentest-{safe_target}"
+
+    # Ensure session exists and is active
+    try:
+        existing_sessions = list_sessions()
+        if chosen_session in existing_sessions:
+            save_active_session(chosen_session)
+            session_status = "switched"
+        else:
+            create_session(
+                chosen_session,
+                f"Automated pentest engagement for {target}",
+                target,
+            )
+            session_status = "created"
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"❌ Failed to initialize pentest session: {str(e)}")]
+
+    phase_outputs = []
+
+    async def run_phase(name: str, coro):
+        try:
+            result = await coro
+            text = result[0].text if result else "No output"
+            phase_outputs.append((name, text))
+        except Exception as e:
+            phase_outputs.append((name, f"Error: {str(e)}"))
+
+    await run_phase("Recon", recon_auto(target, depth))
+    await run_phase("Full Port Scan", port_scan(target, scan_type="full"))
+    await run_phase("Vulnerability Scan", vulnerability_scan(target, scan_type="comprehensive"))
+
+    append_session_history(
+        action=f"run_pentest ({depth})",
+        details=f"target={target}",
+    )
+
+    # Save concise markdown report file in active session
+    report_file = get_active_session_output_path(f"pentest_report_{safe_target}_{timestamp}.md")
+    report_lines = [
+        f"# Pentest Report",
+        "",
+        "## Engagement",
+        f"- **Target:** {target}",
+        f"- **Session:** {chosen_session} ({session_status})",
+        f"- **Depth:** {depth}",
+        f"- **Generated:** {datetime.datetime.now().isoformat()}",
+        "",
+        "## Phase Status",
+    ]
+    for phase_name, phase_text in phase_outputs:
+        first_line = phase_text.splitlines()[0] if phase_text else "No output"
+        report_lines.append(f"- **{phase_name}:** {first_line}")
+
+    report_lines.extend(
+        [
+            "",
+            "## Evidence",
+            f"- Session folder: `sessions/{chosen_session}`",
+            "- Run `session_results` for the latest output previews.",
+            "",
+            "## Next Commands",
+            "```bash",
+            "session_status",
+            "session_history",
+            "session_results limit=0 lines=120",
+            "```",
+        ]
+    )
+
+    markdown_report = "\n".join(report_lines)
+    try:
+        with open(report_file, "w") as f:
+            f.write(markdown_report)
+        append_session_history(
+            action="pentest_report",
+            details=f"output={report_file}",
+        )
+    except Exception:
+        pass
+
+    return [
+        types.TextContent(
+            type="text",
+            text=(
+                f"{markdown_report}\n\n"
+                f"_Saved report file: {report_file}_"
+            ),
+        )
+    ]
+
+
 OUTPUT_FILE_PATTERNS = [
     # Core tool outputs
     "command_output.txt",
