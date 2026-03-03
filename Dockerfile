@@ -37,8 +37,8 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Update searchsploit database at build time
-RUN searchsploit -u
+# Update searchsploit database at build time (best effort; mirrors can be flaky)
+RUN (searchsploit -u || (sleep 5 && searchsploit -u) || echo "[WARN] searchsploit -u failed due to mirror/hash issue; continuing with installed exploitdb package")
 
 # Install waybackurls using Go
 RUN go install github.com/tomnomnom/waybackurls@latest && \
