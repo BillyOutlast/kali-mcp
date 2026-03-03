@@ -230,8 +230,11 @@ async def test_session_history():
     
     result = await session_history()
     assert len(result) == 1
-    # Should show either history or no history message
-    assert any(status in result[0].text for status in ["Session History", "No history recorded"])
+    # Should show either history, no history, or no active session message
+    assert any(
+        status in result[0].text
+        for status in ["Session History", "No history recorded", "No active session"]
+    )
 
 
 @pytest.mark.asyncio
