@@ -50,7 +50,7 @@ run_typecheck() {
 run_lint() {
 	echo "===== Running linting ====="
 	ensure_tool ruff
-	ruff check .
+	ruff check --fix .
 }
 
 run_format() {
