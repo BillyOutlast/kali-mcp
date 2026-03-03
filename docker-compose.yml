@@ -1,0 +1,12 @@
+name: kali-mcp
+
+services:
+  kali-mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kali-mcp-server
+    container_name: kali-mcp-server
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
