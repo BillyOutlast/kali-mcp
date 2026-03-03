@@ -63,7 +63,7 @@ docker run -p 8000:8000 kali-mcp-server
 2. Restart Claude Desktop
 3. Test with: `/run nmap -F localhost`
 
-## Available MCP Tools (38)
+## Available MCP Tools (39)
 
 ### Core Tools
 
@@ -82,6 +82,7 @@ docker run -p 8000:8000 kali-mcp-server
 | `network_discovery` | Multi-stage network reconnaissance and discovery |
 | `subdomain_enum` | Subdomain enumeration using subfinder, amass, waybackurls |
 | `recon_auto` | Automated multi-stage reconnaissance pipeline |
+| `run_pentest` | Create/switch session, run pentest workflow, and return markdown report in chat |
 
 ### Web Application Testing
 
@@ -201,6 +202,18 @@ Runs a multi-stage reconnaissance pipeline with configurable depth.
 | `quick` | DNS enumeration, quick port scan, header analysis |
 | `standard` | + service scan, SSL analysis, exploit search |
 | `deep` | + subdomain enumeration, web enumeration, vulnerability scan |
+
+### `run_pentest` - Session + Pentest + Markdown Report
+
+Creates (or switches to) a session, runs a pentest workflow, and returns a markdown report directly in chat.
+
+```
+/run_pentest target=192.168.31.1
+/run_pentest target=192.168.31.1 session_name=Pentest-192.168.31.1 depth=deep
+```
+
+**Depth Levels:** quick, standard, deep
+**Behavior:** auto session management, session-scoped outputs, markdown report in chat + saved `.md` report file
 
 ### `hydra_attack` - Brute-Force Testing
 
