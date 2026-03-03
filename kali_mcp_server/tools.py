@@ -244,7 +244,7 @@ def create_session(session_name, description, target):
 
 def get_active_session_output_path(filename: str) -> str:
     """Return a session-scoped file path when an active session exists."""
-    acwtive_session = load_active_session()
+    active_session = load_active_session()
     if not active_session:
         return filename
 
